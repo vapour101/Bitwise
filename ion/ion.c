@@ -7,6 +7,26 @@
 
 #define MAX(x, y) ((x) >= (y) ? (x) : (y))
 
+void* xrealloc(void* ptr, size_t num_bytes)
+{
+    ptr = realloc(ptr, num_bytes);
+    if (!ptr) {
+        perror("xrealloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
+void* xmalloc(size_t num_bytes)
+{
+    void* ptr = malloc(num_bytes);
+    if (!ptr) {
+        perror("xmalloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
 // stretchy buffers
 
 typedef struct BufHdr {
@@ -17,13 +37,12 @@ typedef struct BufHdr {
 
 #define buf__hdr(b) ((BufHdr*)((char*)b - offsetof(BufHdr, buf)))
 #define buf__fits(b, n) (buf_len(b) + (n) <= buf_cap(b))
-#define buf__fit(b, n) \
-    (buf__fits(b, n) ? 0 : ((b) = buf__grow((b), buf_len(b) + (n), sizeof(*(b)))))
+#define buf__fit(b, n) (buf__fits((b), (n)) ? 0 : ((b) = buf__grow((b), buf_len(b) + (n), sizeof(*(b)))))
 
 #define buf_len(b) ((b) ? buf__hdr(b)->len : 0)
 #define buf_cap(b) ((b) ? buf__hdr(b)->cap : 0)
-#define buf_push(b, x) (buf__fit(b, 1), b[buf_len(b)] = (x), buf__hdr(b)->len++)
-#define buf_free(b) ((b) ? free(buf__hdr(b)) : 0)
+#define buf_push(b, x) (buf__fit(b, 1), (b)[buf__hdr(b)->len++] = (x))
+#define buf_free(b) ((b) ? (free(buf__hdr(b)), (b) = NULL) : 0)
 
 void* buf__grow(const void* buf, size_t new_len, size_t elem_size)
 {
@@ -33,9 +52,9 @@ void* buf__grow(const void* buf, size_t new_len, size_t elem_size)
 
     BufHdr* new_hdr;
     if (buf) {
-        new_hdr = realloc(buf__hdr(buf), new_size);
+        new_hdr = xrealloc(buf__hdr(buf), new_size);
     } else {
-        new_hdr = malloc(new_size);
+        new_hdr = xmalloc(new_size);
         new_hdr->len = 0;
     }
 
@@ -46,6 +65,7 @@ void* buf__grow(const void* buf, size_t new_len, size_t elem_size)
 void buf_test()
 {
     int* test_buffer = NULL;
+    assert(buf_len(test_buffer) == 0);
 
     enum {
         N = 1024
@@ -62,23 +82,24 @@ void buf_test()
     }
 
     buf_free(test_buffer);
+    assert(test_buffer == NULL);
+    assert(buf_len(test_buffer) == 0);
 }
 
 // lexer
 
 typedef enum TokenKind {
-    TOKEN_INT = 128,
+    TOKEN_LAST_CHAR = 127,
+    TOKEN_INT,
     TOKEN_NAME,
 } TokenKind;
 
 typedef struct Token {
     TokenKind kind;
+    const char* start;
+    const char* end;
     union {
         uint64_t val;
-        struct {
-            const char* start;
-            const char* end;
-        };
     };
 } Token;
 
@@ -87,7 +108,7 @@ const char* stream;
 
 void next_token()
 {
-
+    token.start = stream;
     switch (*stream) {
         // clang-format off
     case '0': case '1': case '2': case '3': case '4':
@@ -111,21 +132,18 @@ void next_token()
     case 'C': case 'D': case 'E': case 'F': case 'G': case 'H': case 'I':
     case 'J': case 'K': case 'L': case 'M': case 'N': case 'O': case 'P':
     case 'Q': case 'R': case 'S': case 'T': case 'U': case 'V': case 'W':
-    case 'X': case 'Y': case 'Z': case '_': {
+    case 'X': case 'Y': case 'Z': case '_':
         // clang-format on
-        const char* start = stream++;
         while (isalnum(*stream) || *stream == '_') {
             stream++;
         }
         token.kind = TOKEN_NAME;
-        token.start = start;
-        token.end = stream;
         break;
-    }
     default:
         token.kind = *stream++;
         break;
     }
+    token.end = stream;
 }
 
 void print_token(Token token)

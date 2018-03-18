@@ -612,16 +612,33 @@ uint8_t* parse_vm_expr(uint8_t* output)
     return output;
 }
 
-void vm_test()
-{
-    uint8_t* in = NULL;
-    init_stream("2*(3+4)*5");
-    in = parse_vm_expr(in);
+#undef push_lit
 
-    printf("Result: %d\n", vm_exec(in));
+int vm_evaluate(const char* str)
+{
+    init_stream(str);
+    uint8_t* buffer = NULL;
+    buffer = parse_vm_expr(buffer);
+
+    return vm_exec(buffer);
 }
 
-#undef LIT_INT
+#define assert_expr(x) assert(vm_evaluate(#x) == (x))
+
+void vm_test()
+{
+    // clang-format off
+    assert_expr(1);
+    assert_expr((1));
+    assert_expr(-+1);
+    assert_expr(1-2-3);
+    assert_expr(2*3+4*5);
+    assert_expr(2*(3+4)*5);
+    assert_expr(2+-3);
+    // clang-format on
+}
+
+#undef assert_expr
 
 void run_tests()
 {

@@ -433,12 +433,203 @@ void parse_test()
 
 #undef assert_expr
 
+#define POP() (*--top)
+#define PUSH(x) (*top++ = (x))
+#define POPS(n) assert(top - stack >= (n))
+#define PUSHES(n) assert(top + (n) <= stack + MAX_STACK)
+
+enum VM_OPS {
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+    POS,
+    NEG,
+    LIT,
+    HLT
+};
+
+int32_t vm_exec(const uint8_t* code)
+{
+    enum { MAX_STACK = 1024 };
+    int32_t stack[MAX_STACK];
+    int32_t* top = stack;
+
+    while (42) {
+        uint8_t op = *code++;
+        switch (op) {
+        case ADD: {
+            POPS(2);
+            int32_t right = POP();
+            int32_t left = POP();
+            PUSHES(1);
+            PUSH(left + right);
+            break;
+        }
+        case SUB: {
+            POPS(2);
+            int32_t right = POP();
+            int32_t left = POP();
+            PUSHES(1);
+            PUSH(left - right);
+            break;
+        }
+        case MUL: {
+            POPS(2);
+            int32_t right = POP();
+            int32_t left = POP();
+            PUSHES(1);
+            PUSH(left * right);
+            break;
+        }
+        case DIV: {
+            POPS(2);
+            int32_t right = POP();
+            int32_t left = POP();
+            PUSHES(1);
+            assert(right != 0);
+            PUSH(left / right);
+            break;
+        }
+        case POS: {
+            POPS(1);
+            int32_t val = POP();
+            PUSHES(1);
+            PUSH(val);
+            break;
+        }
+        case NEG: {
+            POPS(1);
+            int32_t val = POP();
+            PUSHES(1);
+            PUSH(-val);
+            break;
+        }
+        case LIT: {
+            uint32_t val = 0;
+            for (int i = 0; i < 4; i++)
+                val += (1 << (8 * i)) * (*code++);
+
+            PUSHES(1);
+            PUSH(val);
+            break;
+        }
+        case HLT: {
+            POPS(1);
+            return POP();
+        }
+        default:
+            fatal("vm_exec: illegal opcode");
+            return 0;
+        }
+    }
+}
+
+#undef PUSHES
+#undef POPS
+#undef PUSH
+#undef POP
+
+#define push_lit(b, x)                  \
+    buf_push((b), LIT);                 \
+    buf_push((b), (uint8_t)(x));        \
+    buf_push((b), (uint8_t)((x) >> 8)); \
+    buf_push((b), (uint8_t)(x >> 16));  \
+    buf_push((b), (uint8_t)(x >> 24))
+
+uint8_t* parse_vm_expr0(uint8_t* output);
+
+uint8_t* parse_vm_expr3(uint8_t* output)
+{
+    if (is_token(TOKEN_INT)) {
+        push_lit(output, token.val);
+        next_token();
+        return output;
+    } else if (match_token('(')) {
+        output = parse_vm_expr0(output);
+        expect_token(')');
+        return output;
+    } else {
+        fatal("expected integer or (, got %s", temp_token_kind_str(token.kind));
+        return output;
+    }
+}
+
+uint8_t* parse_vm_expr2(uint8_t* output)
+{
+    if (match_token('-')) {
+        output = parse_vm_expr2(output);
+        buf_push(output, NEG);
+        return output;
+    } else if (match_token('+')) {
+        output = parse_vm_expr2(output);
+        buf_push(output, POS);
+        return output;
+    } else {
+        output = parse_vm_expr3(output);
+        return output;
+    }
+}
+
+uint8_t* parse_vm_expr1(uint8_t* output)
+{
+    output = parse_vm_expr2(output);
+    while (is_token('*') || is_token('/')) {
+        char op = token.kind;
+        next_token();
+        output = parse_vm_expr2(output);
+        if (op == '*')
+            buf_push(output, MUL);
+        else {
+            assert(op == '/');
+            buf_push(output, DIV);
+        }
+    }
+    return output;
+}
+
+uint8_t* parse_vm_expr0(uint8_t* output)
+{
+    output = parse_vm_expr1(output);
+    while (is_token('+') || is_token('-')) {
+        char op = token.kind;
+        next_token();
+        output = parse_vm_expr1(output);
+        if (op == '+')
+            buf_push(output, ADD);
+        else {
+            assert(op == '-');
+            buf_push(output, SUB);
+        }
+    }
+    return output;
+}
+
+uint8_t* parse_vm_expr(uint8_t* output)
+{
+    output = parse_vm_expr0(output);
+    buf_push(output, HLT);
+    return output;
+}
+
+void vm_test()
+{
+    uint8_t* in = NULL;
+    init_stream("2*(3+4)*5");
+    in = parse_vm_expr(in);
+
+    printf("Result: %d\n", vm_exec(in));
+}
+
+#undef LIT_INT
+
 void run_tests()
 {
     buf_test();
     lex_test();
     str_intern_test();
     parse_test();
+    vm_test();
 }
 
 int main(int argc, char** argv)

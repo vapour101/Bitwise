@@ -445,6 +445,7 @@ enum VM_OPS {
     DIV,
     POS,
     NEG,
+    NOT,
     LIT,
     HLT
 };
@@ -503,6 +504,13 @@ int32_t vm_exec(const uint8_t* code)
             int32_t val = POP();
             PUSHES(1);
             PUSH(-val);
+            break;
+        }
+        case NOT: {
+            POPS(1);
+            int32_t val = POP();
+            PUSHES(1);
+            PUSH(~val);
             break;
         }
         case LIT: {
@@ -564,6 +572,10 @@ uint8_t* parse_vm_expr2(uint8_t* output)
     } else if (match_token('+')) {
         output = parse_vm_expr2(output);
         buf_push(output, POS);
+        return output;
+    } else if (match_token('~')) {
+        output = parse_vm_expr2(output);
+        buf_push(output, NOT);
         return output;
     } else {
         output = parse_vm_expr3(output);
@@ -635,6 +647,8 @@ void vm_test()
     assert_expr(2*3+4*5);
     assert_expr(2*(3+4)*5);
     assert_expr(2+-3);
+    assert_expr(~1+1);
+    assert_expr(12*34+45/56+~25);
     // clang-format on
 }
 
